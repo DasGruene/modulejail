@@ -37,9 +37,15 @@ OUT_WITHOUT=$CASE_TMP/out-without.conf
 "$MODULEJAIL_BIN" -o "$OUT_WITHOUT" > "$CASE_TMP/stdout-without" 2> "$CASE_TMP/stderr-without" || \
     case_fail "modulejail (no WL) exited $? (expected 0); stderr=$(cat "$CASE_TMP/stderr-without")"
 
-# Both outputs MUST be byte-identical. The fingerprint hashes the
-# canonical sorted whitelist content, so a no-op file MUST produce the
-# same fingerprint as no file at all.
-assert_cmp "$OUT_WITH" "$OUT_WITHOUT"
+# Both outputs MUST be byte-identical EXCEPT for the invocation header,
+# which legitimately differs because the two runs use different args
+# (--whitelist-file PATH vs no flag). Strip the invocation line before the
+# byte-identity check; the fingerprint, the install-line annotation, and
+# every install body line MUST match - the fingerprint hashes the canonical
+# sorted whitelist content, so a no-op file MUST produce the same
+# fingerprint as no file at all.
+grep -v '^# invocation:' "$OUT_WITH" > "$CASE_TMP/with.body"
+grep -v '^# invocation:' "$OUT_WITHOUT" > "$CASE_TMP/without.body"
+assert_cmp "$CASE_TMP/with.body" "$CASE_TMP/without.body"
 
 case_pass

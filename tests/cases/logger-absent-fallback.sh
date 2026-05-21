@@ -35,10 +35,15 @@ MODULEJAIL_LOGGER_PATH=/nonexistent \
     case_fail "modulejail --no-syslog-logging exited $? (expected 0); stderr=$(cat "$CASE_TMP/stderr-optout")"
 
 # The silent-fallback path MUST produce byte-identical output to the
-# explicit opt-out path. This is the strict invariant: same header (same
-# fingerprint, same /bin/true install-line annotation), same body, same
-# trailing newline. cmp catches any drift.
-assert_cmp "$OUT_ABSENT" "$OUT_OPTOUT"
+# explicit opt-out path EXCEPT for the invocation header, which legitimately
+# differs because the two runs use different command-line args
+# (MODULEJAIL_LOGGER_PATH=/nonexistent vs --no-syslog-logging). Strip the
+# invocation line before the byte-identity check; everything else - the
+# fingerprint, the /bin/true install-line annotation, every install body
+# line, the trailing newline - MUST match.
+grep -v '^# invocation:' "$OUT_ABSENT" > "$CASE_TMP/absent.body"
+grep -v '^# invocation:' "$OUT_OPTOUT" > "$CASE_TMP/optout.body"
+assert_cmp "$CASE_TMP/absent.body" "$CASE_TMP/optout.body"
 
 # Header annotation MUST be the /bin/true form (defence in depth - cmp
 # already proves it, but this asserts the form explicitly).

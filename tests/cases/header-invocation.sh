@@ -1,12 +1,17 @@
 #!/bin/sh
-# Case: with /usr/bin/logger present on the host AND no --no-syslog-logging
-# flag, modulejail emits the syslog-logging install-line form and the
-# matching header annotation.
+# Case: the `# invocation:` header line records the exact argv used to
+# produce the blacklist, with POSIX-canonical single-quote encoding so the
+# recorded line is copy-paste replayable. Covers four argv shapes:
 #
-# Skip (not fail) when /usr/bin/logger is absent on the running host: this
-# case asserts the positive default-on path, which is only exercisable when
-# logger is actually executable. The complementary logger-absent-fallback.sh
-# case covers the negative path via MODULEJAIL_LOGGER_PATH override.
+#   1. Plain args - no special characters; no quoting applied.
+#   2. Empty args - the literal empty string is emitted as `''`.
+#   3. Args containing whitespace - wrapped in single quotes.
+#   4. Args containing single quotes - encoded with the canonical `'\''`
+#      idiom (close-quote, escaped-apostrophe, open-quote).
+#
+# The four-backslash escape in the single-quote assertion is intentional:
+# shell strips two of them, grep BRE keeps the remaining `\\` as a literal
+# backslash match, which is exactly what the recorded line contains.
 set -eu
 
 CASE_NAME=header-invocation
@@ -47,7 +52,6 @@ OUT="$CASE_TMP/out'put.conf"
     case_fail "modulejail exited $? (expected 0); stderr=$(cat "$CASE_TMP/stderr")"
 
 # Header invocation test args with single quotes
-head "$OUT"
 assert_grep "^# invocation: $MODULEJAIL_BIN -o '$CASE_TMP/out'\\\\''put.conf'$" \
     "$OUT" header-invocation-args-with-single-quotes
 
