@@ -80,7 +80,7 @@ sudo sh /tmp/modulejail
 This is the recommended path for any production deployment. The script is
 plain POSIX shell and inspection takes under ten minutes.
 
-## Native packages (.deb / .rpm)
+## Native packages (.deb / .rpm / AUR)
 
 For Debian/Ubuntu and RHEL/Fedora/Rocky hosts, prebuilt packages are attached
 to the GitHub release page:
@@ -95,11 +95,29 @@ curl -fsSLO https://github.com/jnuyens/modulejail/releases/download/v1.2.4/modul
 sudo rpm -i modulejail-1.2.4-1.noarch.rpm
 ```
 
-Both packages install `/usr/bin/modulejail`, the `modulejail(8)` manpage
+For Arch Linux and derivatives (Manjaro, EndeavourOS, ...), modulejail is
+in the AUR:
+
+```sh
+# With any AUR helper (yay shown; paru, pikaur, etc. work identically):
+yay -S modulejail
+
+# Or manually:
+git clone https://aur.archlinux.org/modulejail.git
+cd modulejail
+makepkg -si
+```
+
+AUR package: <https://aur.archlinux.org/packages/modulejail>
+
+All three packages install `/usr/bin/modulejail`, the `modulejail(8)` manpage
 under `/usr/share/man/man8/`, and the README and LICENSE under
 `/usr/share/doc/modulejail/`. They depend on `coreutils`, `findutils`, and
 `awk`/`gawk` (all standard) and recommend `curl` or `wget` so the optional
-post-run update check can reach GitHub.
+post-run update check can reach GitHub. The AUR package additionally lists
+`kmod` as a hard dependency (it ships `lsmod` and `modprobe`; on Debian and
+RHEL families that package is pulled in by `base`/`@core` and so does not
+need to be declared explicitly).
 
 After install, `man 8 modulejail` shows the full reference: options,
 profiles, safety model, idempotency, exit codes, environment, and examples.
