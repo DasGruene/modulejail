@@ -215,6 +215,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --dry-run)
+            # shellcheck disable=SC2034  # DRY_RUN consumed by Wave 2 (05-02)
             DRY_RUN=1
             shift
             ;;
