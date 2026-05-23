@@ -47,9 +47,10 @@ For a tagged release, the entire AUR publish is one command after
 The script reads the target version from the modulejail script's
 `VERSION` constant, verifies the GitHub release tarball is reachable,
 computes the sha256 locally, updates `packaging/aur/PKGBUILD`,
-regenerates `.SRCINFO` on a remote docker host (default
-`ubuntu-wifi`), clones or refreshes the AUR git repo into a scratch
-dir, and pushes. Idempotent and safe to re-run.
+regenerates `.SRCINFO` via native `makepkg --printsrcinfo` on a remote
+Arch host (default `REMOTE_BUILD_HOST=archbox`), clones or refreshes
+the AUR git repo into a scratch dir, and pushes. Idempotent and safe
+to re-run.
 
 Flags:
 
@@ -61,10 +62,11 @@ Flags:
   bump already happened locally.
 - `--dry-run` - run everything except the final `git push` to AUR.
 
-The script regenerates `.SRCINFO` via docker on a remote host because
-`makepkg` is not available on macOS. Override via
-`REMOTE_BUILD_HOST=somehost ./scripts/publish-aur.sh` if you want a
-different docker host.
+The script regenerates `.SRCINFO` via native `makepkg` on a remote
+Arch host because `makepkg` is not available on macOS. Default
+`REMOTE_BUILD_HOST=archbox`; override with
+`REMOTE_BUILD_HOST=somehost ./scripts/publish-aur.sh` to point at a
+different Arch (or Arch-derivative) box.
 
 ### Optional: auto-publish on tag push
 
@@ -119,12 +121,13 @@ git commit -m "modulejail X.Y.Z"
 git push
 ```
 
-## Container smoke test (non-Arch host)
+## Container smoke test (no Arch host available)
 
-`scripts/publish-aur.sh` uses essentially this same docker-on-remote
-recipe internally. If you want to invoke a standalone smoke build
-(e.g. to validate a hand-edited PKGBUILD before letting the script
-push it), here it is:
+The primary publish script defaults to a native `makepkg` on
+`archbox`. If that host is unreachable and you have no other Arch box,
+the docker fallback below produces an equivalent build on any
+docker-equipped Linux host (the old workflow, kept here for the
+genuinely-no-Arch-anywhere case):
 
 ```sh
 # Stage the PKGBUILD into a scratch dir on a docker-equipped host.

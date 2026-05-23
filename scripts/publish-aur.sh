@@ -2,7 +2,7 @@
 # Publish the current packaging/aur/PKGBUILD to AUR.
 #
 # Idempotent and safe to re-run. Uses this host's SSH key for the AUR push;
-# defers .SRCINFO regeneration to a remote docker host (DEFAULT: ubuntu-wifi)
+# defers .SRCINFO regeneration to a remote Arch host (DEFAULT: archbox)
 # because makepkg is not available on macOS.
 #
 # Typical flow:
@@ -32,7 +32,10 @@
 #                    happened locally.
 #
 # Environment:
-#   REMOTE_BUILD_HOST   SSH host with docker installed (default: ubuntu-wifi).
+#   REMOTE_BUILD_HOST   SSH host with makepkg installed (default: archbox).
+#                       Must be Arch or an Arch derivative - the only command
+#                       run remotely is `makepkg --printsrcinfo`, which
+#                       requires the pacman/makepkg toolchain.
 #   AUR_PUBLISH_DIR     Local path for the AUR git clone (default:
 #                       /tmp/aur-modulejail-publish).
 
@@ -41,7 +44,7 @@ set -eu
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PKGBUILD=$REPO_ROOT/packaging/aur/PKGBUILD
 LICENSE=$REPO_ROOT/packaging/aur/LICENSE
-REMOTE_BUILD_HOST=${REMOTE_BUILD_HOST:-ubuntu-wifi}
+REMOTE_BUILD_HOST=${REMOTE_BUILD_HOST:-archbox}
 AUR_PUBLISH_DIR=${AUR_PUBLISH_DIR:-/tmp/aur-modulejail-publish}
 
 DRY_RUN=0
@@ -118,18 +121,11 @@ else
     echo "publish-aur.sh: PKGBUILD updated to $NEW_PKGVER-$NEW_PKGREL with sha256=$SHA256"
 fi
 
-# --- regenerate .SRCINFO on the remote docker host --------------------------
-echo "publish-aur.sh: regenerating .SRCINFO on $REMOTE_BUILD_HOST via docker..."
+# --- regenerate .SRCINFO on the remote Arch host ----------------------------
+echo "publish-aur.sh: regenerating .SRCINFO on $REMOTE_BUILD_HOST..."
 ssh "$REMOTE_BUILD_HOST" "rm -rf /tmp/aur-smoke && mkdir -p /tmp/aur-smoke"
 scp -q "$PKGBUILD" "$REMOTE_BUILD_HOST:/tmp/aur-smoke/PKGBUILD"
-ssh "$REMOTE_BUILD_HOST" 'sudo docker run --rm -v /tmp/aur-smoke:/build archlinux:latest /bin/bash -c "
-    set -eu
-    pacman -Sy --noconfirm --needed base-devel pacman-contrib sudo >/dev/null 2>&1
-    useradd -m builder
-    echo \"builder ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/builder
-    chown -R builder:builder /build
-    sudo -u builder bash -lc \"cd /build && makepkg --printsrcinfo > .SRCINFO\"
-" >/dev/null'
+ssh "$REMOTE_BUILD_HOST" 'cd /tmp/aur-smoke && makepkg --printsrcinfo > .SRCINFO'
 SRCINFO_TMP=$(mktemp)
 scp -q "$REMOTE_BUILD_HOST:/tmp/aur-smoke/.SRCINFO" "$SRCINFO_TMP"
 
