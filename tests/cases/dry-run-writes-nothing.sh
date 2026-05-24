@@ -38,9 +38,15 @@ assert_grep '^# install-line:' "$CASE_TMP/stderr" dry-run-header-line-6
 assert_grep '^# invocation:' "$CASE_TMP/stderr" dry-run-header-line-7
 assert_grep '^# Do not edit by hand' "$CASE_TMP/stderr" dry-run-header-line-8
 
-# No orphaned dotfile should remain in the target directory.
-if ls "$CASE_TMP"/.modulejail-blacklist.conf.* 2>/dev/null | grep -q .; then
-    case_fail "orphaned temp dotfile found in $CASE_TMP after --dry-run"
-fi
+# No orphaned dotfile should remain in the target directory. Use a POSIX
+# glob loop rather than `ls | grep` (SC2010) so non-alphanumeric filenames
+# would not confuse the check; the glob expands to its literal pattern
+# string when nothing matches, and the [ -e ] guard handles that case.
+for orphan in "$CASE_TMP"/.modulejail-blacklist.conf.*; do
+    if [ -e "$orphan" ]; then
+        case_fail "orphaned temp dotfile found in $CASE_TMP after --dry-run"
+    fi
+    break
+done
 
 case_pass
