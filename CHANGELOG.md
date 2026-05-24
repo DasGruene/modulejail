@@ -5,6 +5,128 @@ All notable changes to ModuleJail are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-24
+
+Operator-flexibility CLI surface (four new flags, one new profile, one
+new header line) and the first release cut from a hardened pipeline
+(GPG-signed annotated tags going forward, GitHub Actions CI matrix on
+every push / PR / tag). Single biggest release since v1.2.0.
+
+### Added
+
+- New `-p none` profile. Produces a blacklist that preserves only the
+  currently-loaded module set (`lsmod`) and the `--whitelist-file`
+  entries, with NO built-in baseline added. Most aggressive profile;
+  recommended only when `--whitelist-file PATH` is supplied. The >99%
+  blacklist sanity guard is skipped on this profile and an `info:` line
+  documents the skip on stderr. Supports the centrally-generated
+  deny-list / shared-node operator pattern from frymaster on
+  r/archlinux. Closes OPT-01.
+- New `--dry-run` flag. Runs the full pipeline (compute the blacklist
+  set, render the header, fingerprint the body) but writes NOTHING
+  under `/etc/modprobe.d/`. The would-be header is rerouted to stderr;
+  `DRY-RUN: would blacklist N modules` summary on stdout. Exit code 0
+  on simulated success. Combines cleanly with every other flag. Closes
+  OPT-02.
+- New `--quiet` flag suppresses all non-error stderr output (info /
+  notice lines and the post-run human summary). `error:` lines still
+  fire so fleet automation case-splitting on sysexits codes remains
+  correct. Closes OPT-03 (quiet half).
+- New `--verbose` flag emits per-module decision lines on stderr,
+  produced by a single-pass `awk` (O(n), one fork). Mutually exclusive
+  with `--quiet` (combining exits `64 EX_USAGE`). Closes OPT-03
+  (verbose half).
+- New `--output-format json` / `--output-format logfmt` flags emit a
+  machine-readable run summary to stdout on success. Schema v1: 11
+  fields including `tool_name`, `tool_version`, `kernel_version`,
+  `profile`, `modules_available`, `modules_loaded`,
+  `modules_blacklisted`, `fingerprint` (sha256, raw hex),
+  `output_path`, `dry_run` (bool), `whitelist_file`. JSON form
+  round-trips through `jq`; logfmt form round-trips through standard
+  logfmt parsers. `--output-format` bypasses `--quiet` (the
+  machine-readable summary survives the silencer) but never emits on
+  error. Closes OPT-04.
+- New `# kernel version: <uname -r>` line in the generated blacklist
+  header, on a separate line from the existing ModuleJail version and
+  sha256 fingerprint annotations. Lets a recipient of a
+  centrally-deployed deny-list see which kernel's module tree produced
+  it. The v1.1.4 byte-identical install-line body is preserved under
+  `--no-syslog-logging` (6363 / 6363 install lines). Closes HDR-01.
+- Twelve new acceptance cases under `tests/cases/` locking the Phase 5
+  surface (`-p none`, `--dry-run`, `--quiet`, `--verbose`,
+  `--output-format json|logfmt`, `HDR-01` header lock, and the
+  `--quiet` + `--verbose` mutex). Total host-local acceptance suite is
+  now 30 cases.
+- New `## Verifying releases` section in `README.md` documenting the
+  `git tag -v v1.3.0` verification path, expected `gpg: Good signature`
+  output, two key-import paths (`curl https://github.com/jnuyens.gpg |
+  gpg --import` and `gpg --recv-keys <FPR>`), and a maintainer-aside
+  `> [!TIP]` callout for the one-time `git config tag.gpgsign true`
+  setup.
+
+### Changed
+
+- Generated blacklist header gains a new `# kernel version:` line per
+  HDR-01 above. The install-line body remains byte-identical to v1.1.4
+  under `--no-syslog-logging` per the D-39 contract; only the header
+  annotation set grows.
+
+### Security
+
+- **Annotated release tags are now GPG-signed.** `v1.3.0` is the first
+  signed tag; `v1.0.0..v1.2.4` are intentionally left as
+  annotated-but-unsigned (history not rewritten; downstream packagers
+  rely on commit-immutability). Verification path documented in
+  `README.md` `## Verifying releases`. Signing-key fingerprint
+  published in the release notes. Closes REL-04.
+
+### Internal
+
+- New `.github/workflows/ci.yml` runs `tests/run-fixtures.sh` on every
+  push to `master`, every PR, and every tag push. Five explicit named
+  jobs: `lint` (shellcheck across `modulejail`,
+  `tests/run-fixtures.sh`, `tests/lib/*.sh`, `tests/cases/*.sh`,
+  `scripts/*.sh`) plus `arch` + `alpine` + `opensuse` (the three
+  already-supported fixture-tier distros) plus `host-local`. Each
+  fixture job calls the same harness the local fixture-test path uses
+  (no parallel test logic). Branch protection on `master` requires all
+  five checks. Zero secrets in the workflow; only first-party
+  `actions/checkout@v4` is used. Closes REL-05.
+- `tests/run-fixtures.sh` gains `--only-container DISTRO` and
+  `--only-host-local` per-axis selector flags. Three-way mutex with
+  `--filter PATTERN`; `DISTRO` is allowlisted against
+  `{arch, alpine, opensuse}`; bad usage exits `64 EX_USAGE`. Used by
+  the CI matrix to dispatch one job per axis.
+- `tests/lib/case-env.sh` split into a slim `case-env.sh` (shared
+  boilerplate, centralized `EXIT / INT / HUP / TERM` trap) plus new
+  `tests/lib/case-tree.sh` (synthetic kernel-module-tree builder,
+  13 representative touches, 50-dummy padding, fake `/proc/modules`).
+  `tests/cases/v1.1.4-regression.sh` now sources `case-env.sh` only
+  (drops the duplicated boilerplate, migrates four failure paths to
+  `case_fail`); the v1.1.4 6363 / 6363 byte-identical install-line
+  body contract still holds. Twenty-seven other host-local cases
+  source `case-tree.sh` for the synthetic tree builder; two
+  open-coded outliers (`emit-install-line-sanitize.sh`,
+  `ssh-unreachable-regression.sh`) are deliberately untouched.
+  Closes IN-03.
+- `man/modulejail.8.in` line 7 `.TH` date is now a `__DATE__`
+  placeholder substituted by `packaging/build.sh` at build time
+  (parallel to the existing `__VERSION__` substitution). Honours
+  `SOURCE_DATE_EPOCH` per reproducible-builds.org, with GNU/BSD
+  `date` fallback (`date -u -d '@SDE'` first, `date -u -r SDE`
+  second) so both Debian/Fedora build hosts and the macOS dev host
+  produce the same output. Closes IN-04.
+
+### Notes
+
+- The v1.1.4 byte-identical install-line body contract (D-39) is held
+  through every Phase 5 and Phase 6 commit; `--no-syslog-logging`
+  still produces the exact v1.1.4 bytes (6363 / 6363 install lines).
+- Phase 6 introduces signed tags forward only. Earlier releases
+  (v1.0.0 through v1.2.4) remain annotated-but-unsigned by design;
+  re-signing them would require force-pushing history and break
+  downstream packagers' commit-immutability assumptions.
+
 ## [1.2.4] - 2026-05-20
 
 ### Added
