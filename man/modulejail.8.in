@@ -18,6 +18,7 @@ modulejail \- shrink a Linux host's kernel-module attack surface
 .RB [ \-\-whitelist\-file
 .IR path ]
 .RB [ \-\-no\-syslog\-logging ]
+.RB [ \-\-verbose\-logging ]
 .RB [ \-\-dry\-run ]
 .RB [ \-\-quiet | \-\-verbose ]
 .RB [ \-f ]
@@ -267,6 +268,39 @@ so
 returns non-zero for any blacklisted module. Use this when
 blocked loads should produce a visible error rather than silently
 succeeding.
+.TP
+.B \-\-verbose\-logging
+Enrich the per-blocked-load
+.B logger
+call with the caller context, read from
+.IR /proc/$PPID/ ":"
+the parent PID
+.RB ( ppid ),
+the audit
+.B loginuid
+(persists across
+.BR su / sudo ),
+the parent's short command name
+.RB ( pcomm ),
+and
+.B argv[0]
+.RB ( pexe ,
+truncated at the first NUL by command substitution; full
+.B cmdline
+is one
+.B "ps -fp <ppid>"
+away). Default
+.B logger
+output is the bare
+.IR "blocked: <module>"
+form. Requires
+.I /usr/bin/logger
+to be executable (modulejail exits
+.B 66
+.RB ( EX_NOINPUT )
+otherwise); mutually exclusive with
+.BR \-\-no\-syslog\-logging .
+Available since v1.3.4.
 .TP
 .BR \-V ", " \-\-version
 Print version, repository URL, and license, then exit

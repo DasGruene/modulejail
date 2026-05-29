@@ -1,0 +1,76 @@
+#!/bin/sh
+# Case: --verbose-logging enriches the per-blocked-load logger call with
+# the caller's PPID/loginuid/pcomm/pexe (read from /proc/$PPID/...).
+# Default (no flag) keeps the bare "blocked: <module>" form for backward
+# compatibility.
+#
+# Skip (not fail) when /usr/bin/logger is absent on the host: the flag
+# requires logger to be executable, and the test asserts behavior of the
+# logger-path branch specifically.
+set -eu
+
+CASE_NAME=verbose-logging-enriches-install-line
+export CASE_NAME
+
+# shellcheck source=tests/lib/case-env.sh disable=SC1091
+. "$(dirname "$0")/../lib/case-env.sh"
+# shellcheck source=tests/lib/case-tree.sh disable=SC1091
+. "$REPO_ROOT/tests/lib/case-tree.sh"
+# shellcheck source=tests/lib/assert.sh disable=SC1091
+. "$REPO_ROOT/tests/lib/assert.sh"
+
+trap 'rm -rf "$CASE_TMP"' EXIT INT HUP TERM
+
+if [ ! -x /usr/bin/logger ]; then
+    printf '[%s] SKIP: /usr/bin/logger not executable on this host\n' "$CASE_NAME"
+    exit 0
+fi
+
+OUT_VERBOSE=$CASE_TMP/out-verbose.conf
+OUT_DEFAULT=$CASE_TMP/out-default.conf
+
+# Run 1: --verbose-logging on
+"$MODULEJAIL_BIN" --verbose-logging -o "$OUT_VERBOSE" \
+    > "$CASE_TMP/stdout-verbose" 2> "$CASE_TMP/stderr-verbose" || \
+    case_fail "modulejail --verbose-logging exited $? (expected 0)"
+
+# Run 2: default (no flag)
+"$MODULEJAIL_BIN" -o "$OUT_DEFAULT" \
+    > "$CASE_TMP/stdout-default" 2> "$CASE_TMP/stderr-default" || \
+    case_fail "modulejail (default) exited $? (expected 0)"
+
+# Header annotation MUST be the verbose-logging form when --verbose-logging set.
+assert_grep '^# install-line: /bin/sh \+ logger \+ ppid/loginuid/pcomm/pexe context \(syslog tag: modulejail, --verbose-logging\)$' \
+    "$OUT_VERBOSE" header-verbose-annotation
+
+# Header annotation MUST be the legacy logger form when --verbose-logging is not set.
+assert_grep '^# install-line: /bin/sh \+ logger \(syslog tag: modulejail\)$' \
+    "$OUT_DEFAULT" header-default-annotation
+
+# Body MUST carry the enriched logger call under --verbose-logging.
+# Every install line should reference $PPID, loginuid, pcomm, pexe as
+# literal strings (single-quoted; resolved at modprobe time by /bin/sh).
+# assert_grep uses ERE (grep -E); the literal `(` chars in the
+# `$(cat ...)` substrings need `\(` escape so ERE treats them as
+# literal rather than as group-open metacharacters.
+# shellcheck disable=SC2016  # the \$PPID etc. are LITERAL by design
+assert_grep 'ppid=\$PPID' "$OUT_VERBOSE" body-verbose-ppid
+# shellcheck disable=SC2016
+assert_grep 'loginuid=\$\(cat /proc/\$PPID/loginuid' "$OUT_VERBOSE" body-verbose-loginuid
+# shellcheck disable=SC2016
+assert_grep 'pcomm=\$\(cat /proc/\$PPID/comm' "$OUT_VERBOSE" body-verbose-pcomm
+# shellcheck disable=SC2016
+assert_grep 'pexe=\$\(cat /proc/\$PPID/cmdline' "$OUT_VERBOSE" body-verbose-pexe
+
+# Body MUST NOT carry the enriched form under default (no flag).
+# shellcheck disable=SC2016
+if grep -qE 'ppid=\$PPID' "$OUT_DEFAULT"; then
+    case_fail "default body contains ppid=\\\$PPID (should be bare blocked: <mod>)"
+fi
+
+# Body under default MUST carry the bare "blocked: <mod>" v1.2.2 form
+# (byte-identical to v1.2.2 by construction).
+assert_grep "^install [a-zA-Z0-9_-]+ /bin/sh -c '/usr/bin/logger -t modulejail \"blocked: [a-zA-Z0-9_-]+\" 2>/dev/null; exit 0'\$" \
+    "$OUT_DEFAULT" body-default-form
+
+case_pass

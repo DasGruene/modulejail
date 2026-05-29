@@ -69,7 +69,7 @@ deploy it first; the deeper recipes compose on top.
 ## Quickstart
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejail | sudo sh
+curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.4/modulejail | sudo sh
 ```
 
 > **WARNING: convenient, not safe.** This pipes unverified bytes from the
@@ -86,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejai
 > the keep-list unconditionally.
 >
 > ```sh
-> curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejail | sudo sh -s -- -p desktop
+> curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.4/modulejail | sudo sh -s -- -p desktop
 > ```
 >
 > See [Profiles](#profiles) below for the full list.
@@ -95,7 +95,7 @@ The script writes its blacklist to `/etc/modprobe.d/modulejail-blacklist.conf`
 by default. To use a different path:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejail | sudo sh -s -- -o /etc/modprobe.d/site-blacklist.conf
+curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.4/modulejail | sudo sh -s -- -o /etc/modprobe.d/site-blacklist.conf
 ```
 
 ## The safer alternative
@@ -103,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejai
 Download, inspect, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.3/modulejail -o /tmp/modulejail
+curl -fsSL https://raw.githubusercontent.com/jnuyens/modulejail/v1.3.4/modulejail -o /tmp/modulejail
 less /tmp/modulejail
 sudo sh /tmp/modulejail
 ```
@@ -118,12 +118,12 @@ to the GitHub release page:
 
 ```sh
 # Debian / Ubuntu:
-curl -fsSLO https://github.com/jnuyens/modulejail/releases/download/v1.3.3/modulejail_1.3.3_all.deb
-sudo dpkg -i modulejail_1.3.3_all.deb
+curl -fsSLO https://github.com/jnuyens/modulejail/releases/download/v1.3.4/modulejail_1.3.4_all.deb
+sudo dpkg -i modulejail_1.3.4_all.deb
 
 # RHEL / Fedora / Rocky:
-curl -fsSLO https://github.com/jnuyens/modulejail/releases/download/v1.3.3/modulejail-1.3.3-1.noarch.rpm
-sudo rpm -i modulejail-1.3.3-1.noarch.rpm
+curl -fsSLO https://github.com/jnuyens/modulejail/releases/download/v1.3.4/modulejail-1.3.4-1.noarch.rpm
+sudo rpm -i modulejail-1.3.4-1.noarch.rpm
 ```
 
 For Arch Linux and derivatives (Manjaro, EndeavourOS, ...), modulejail is
@@ -237,7 +237,7 @@ release on production hosts, and report the discrepancy upstream.
 > git config user.signingkey <KEYID-TO-BE-FILLED>
 > ```
 >
-> From then on, `git tag -a v1.3.3 -m "..."` auto-signs without the
+> From then on, `git tag -a v1.3.4 -m "..."` auto-signs without the
 > explicit `-s` flag. Replace `<KEYID-TO-BE-FILLED>` locally on the
 > maintainer's machine; do NOT commit a real key ID into this README
 > (the placeholder is the published form).
@@ -579,6 +579,7 @@ enforcement, `kernel.modules_disabled=1`).
 | `--no-whitelist-file` | Skip the default whitelist file even if present. Mutually exclusive with `--whitelist-file PATH` |
 | `--no-syslog-logging` | Force `/bin/true` install lines (v1.1.4 behavior). By default, blocked module loads are logged to syslog with tag `modulejail` |
 | `-f`, `--fail-on-module-load` | Blocked module loads return a non-zero exit code (`modprobe` fails loudly). Default: blocked loads silently succeed |
+| `--verbose-logging` | Enrich the per-blocked-load `logger` call with the caller's `ppid`, `loginuid`, `pcomm`, and `pexe` (read from `/proc/$PPID/...`). Requires `/usr/bin/logger`; mutually exclusive with `--no-syslog-logging`. Default `logger` output is the bare `"blocked: <module>"` form (since v1.3.4) |
 | `--dry-run` | Compute the would-be blacklist and print a summary to stdout; do NOT write the output file or touch `/etc/modprobe.d/`. Header is rerouted to stderr. Exit code is `0` on simulated success (since v1.3) |
 | `--quiet` | Suppress all non-error stderr output (info lines, summary, header echo). Errors still surface. Mutually exclusive with `--verbose` (since v1.3) |
 | `--verbose` | Emit per-module decision lines on stderr (which module was kept, which was blacklisted, and why). Mutually exclusive with `--quiet` (since v1.3) |
@@ -741,7 +742,7 @@ proliferating them across the documentation surface.
 
 ### Branching model
 
-- **`master`** tracks the latest stable release (currently `v1.3.3`).
+- **`master`** tracks the latest stable release (currently `v1.3.4`).
   Every commit on `master` is shippable. Hotfixes to the current
   stable line and small backward-compatible improvements (docs,
   packaging, small baseline additions) land here.
@@ -763,6 +764,33 @@ PRs:
 The AUR `modulejail-git` package builds from `master` HEAD (= rolling
 stable), not from the dev branch, so rolling-AUR users always get
 shippable code.
+
+### Baseline-addition policy (since v1.3.4)
+
+Suggestions to add a module to `BASELINE_CONSERVATIVE` or
+`BASELINE_DESKTOP` are evaluated against a single rule:
+
+> Modules join a baseline only when there is observed operator pain in
+> that profile's target audience. CONSERVATIVE target =
+> bare-metal/VM Linux servers (hands-on admins, post-steady-state
+> runs). DESKTOP target = laptops/workstations (set-and-forget UX,
+> ModuleJail may run at any time including before all udev/late-load
+> events have settled). *"Defensive add because the kernel sometimes
+> loads it late"* is insufficient justification - a real operator-
+> reported breakage in the relevant profile's target audience is the
+> bar.
+
+The implication for issue / PR authors: when proposing a baseline
+addition, link the operator-side breakage report or describe the
+concrete workflow that breaks. Module names that don't have a
+real-world breakage report are better placed in your local
+`WHITELIST=` variable (or community-curated lists like the Manjaro
+forum HOWTO linked in *Community resources* below).
+
+`acpi_cpufreq` in `BASELINE_CONSERVATIVE` predates this policy
+(added in v1.3.2 with the same speculative reasoning the policy now
+disallows). It is retained for backward compatibility; no future
+additions follow the same pattern.
 
 ### Tests
 

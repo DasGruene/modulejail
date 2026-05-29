@@ -5,6 +5,92 @@ All notable changes to ModuleJail are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-05-30
+
+Patch release. One new flag (`--verbose-logging`), five new
+`BASELINE_DESKTOP` entries (CPU power management + TUN/TAP), one
+documented baseline-addition policy. v1.1.4 byte-identical install-
+line body preserved under default flags (no change to default
+behavior).
+
+### Added
+
+- `--verbose-logging` flag. Enriches the per-blocked-load `logger`
+  call with the caller context, read from `/proc/$PPID/...`: the
+  parent PID (`ppid`), audit `loginuid` (persists across `su`/
+  `sudo`), parent short command name (`pcomm`), and `argv[0]`
+  (`pexe`, naturally NUL-truncated; full `cmdline` is one
+  `ps -fp <ppid>` away). Default `logger` output remains the bare
+  `"blocked: <module>"` form. Requires `/usr/bin/logger` to be
+  executable (modulejail exits `EX_NOINPUT=66` otherwise);
+  mutually exclusive with `--no-syslog-logging`. Resolves the
+  triage request from @retry-the-user in
+  [issue #18](https://github.com/jnuyens/modulejail/issues/18).
+  Three new acceptance cases cover the enriched install-line body,
+  the mutex with `--no-syslog-logging`, and the
+  logger-binary-missing error path.
+- `BASELINE_DESKTOP` additions (5 modules, target audience is
+  laptops / workstations where modulejail may run before all
+  udev/late-load events have settled):
+  - `intel_pstate`, `intel_cstate` - modern Intel CPU power
+    management.
+  - `amd_pstate` - AMD analog of `intel_pstate` (in-kernel since
+    6.0).
+  - `tun`, `tap` - VPN clients (WireGuard, OpenVPN), VirtualBox/
+    VMware, qemu/KVM bridges.
+
+### Changed
+
+- Documented **baseline-addition policy** in the `modulejail`
+  script (new comment block above the `Deliberately NOT in any
+  baseline` section) and in `README.md` `## Contributing` (new
+  `### Baseline-addition policy` subsection). Policy text:
+
+  > Modules join a baseline only when there is observed operator
+  > pain in that profile's target audience. CONSERVATIVE target =
+  > bare-metal/VM Linux servers (hands-on admins, post-steady-state
+  > runs). DESKTOP target = laptops/workstations (set-and-forget
+  > UX, ModuleJail may run at any time including before all udev/
+  > late-load events have settled). "Defensive add because the
+  > kernel sometimes loads it late" is insufficient justification -
+  > a real operator-reported breakage in the relevant profile's
+  > target audience is the bar.
+
+  `acpi_cpufreq` in `BASELINE_CONSERVATIVE` (added v1.3.2 with the
+  same speculative reasoning the policy now disallows) is retained
+  for backward compatibility; no future additions follow that
+  pattern.
+- `BASELINE_DESKTOP` comment header updated to reflect the new
+  entries and the target-audience phrasing.
+
+### Credit
+
+- @retry-the-user in
+  [issue #18](https://github.com/jnuyens/modulejail/issues/18) for
+  the `--verbose-logging` motivation (triage of who-tried-to-load
+  what for whitelist decisions).
+- @teou1 in
+  [issue #16](https://github.com/jnuyens/modulejail/issues/16) for
+  the CPU power management + TUN/TAP suggestions and for the
+  push-back that catalysed the baseline-addition policy.
+
+### Notes
+
+- `ntfs` declined from the same #16 feedback round. The
+  `CONFIG_NTFS_FS` kernel option is explicitly marked backward-
+  compat only in the current 7.x tree (`"NTFS filesystem is now
+  handled by the NTFS3 driver"`); the actually-maintained driver
+  remains `ntfs3` which is already in DESKTOP. Adding `ntfs` would
+  pull in deprecated code paths that only exist for users who
+  haven't migrated.
+- Adding `intel_pstate` / `intel_cstate` / `amd_pstate` to
+  `BASELINE_CONSERVATIVE` was considered and declined: on servers
+  the cpufreq driver path is either kernel-built-in (the default
+  on Debian / Ubuntu Server / RHEL / Amazon Linux), or loaded via
+  udev modalias matching within milliseconds of boot. There is no
+  load-on-user-action path for CPU governors on servers, so the
+  policy bar for `CONSERVATIVE` addition is not met.
+
 ## [1.3.3] - 2026-05-29
 
 Hotfix release. The v1.3.2 baseline additions (this morning) broke
