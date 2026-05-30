@@ -141,6 +141,14 @@ makepkg -si
 
 AUR package: <https://aur.archlinux.org/packages/modulejail>
 
+For Debian: @kapouer (Jérémy Lal) is packaging modulejail for the
+official Debian archive - tracked in Debian BTS as
+[ITP #1138266](https://bugs.debian.org/1138266) (filed 2026-05-30,
+v1.3.6 targeted). Once the package clears the Debian NEW queue it
+lands in Debian unstable; Ubuntu universe auto-imports from there.
+Until then, Debian/Ubuntu operators should use the `.deb` from the
+GitHub release page above.
+
 All three packages install `/usr/bin/modulejail`, the `modulejail(8)` manpage
 under `/usr/share/man/man8/`, and the README and LICENSE under
 `/usr/share/doc/modulejail/`. They depend on `coreutils`, `findutils`, and
