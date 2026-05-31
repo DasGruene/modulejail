@@ -412,6 +412,72 @@ ModuleJail for hosts that run many services with different syscall needs;
 ModuleJail closes the auto-load surface globally, seccomp closes specific
 syscalls per service.
 
+### Recipe 6 - Trace autoload origin with kernel audit
+
+**What it does:** captures the originating userspace process behind every
+attempted module load, including the real login user. This is the
+information that ModuleJail's `--verbose-logging` cannot reach from inside
+a modprobe install-line.
+
+**Why the install-line cannot reach it:** when the kernel needs an
+unloaded module, it calls `request_module()`, which runs
+`call_usermodehelper()` and forks the modprobe helper off `kthreadd`
+(PID 2). By the time modprobe runs the install command:
+
+- `$PPID` points at the kernel-spawned modprobe, not at the userspace
+  process that triggered the load
+- that process's parent is `kthreadd`, so a `/proc/$PPID/...` walk
+  cannot climb back to the originator
+- `loginuid` reads `4294967295` (UINT_MAX, ie `-1`), because no audit
+  login session is ever attached to a task descended from `kthreadd`
+
+This is kernel design (the helper is intentionally decoupled from the
+triggering syscall's context), not a ModuleJail gap. The originator
+survives in one place: the kernel audit event stream.
+
+**Who it protects against:** false-positive triage. Operators running
+with `--verbose-logging` and seeing entries like
+`blocked: sctp ppid=N pcomm=modprobe loginuid=-1` cannot tell whether
+that load attempt came from a legitimate service or from a curious local
+user without correlating back to the actual originating process. Audit
+records make the originator visible.
+
+**How to apply:**
+
+```sh
+# Capture every module-load syscall and every modprobe exec
+sudo auditctl -a always,exit -F arch=b64 -S finit_module -S init_module -k modload
+sudo auditctl -w /sbin/modprobe -p x -k modprobe_exec
+
+# Persist across reboots by writing the same rules (without `sudo`,
+# one per line, no `auditctl` prefix) to:
+#   /etc/audit/rules.d/50-modulejail-trace.rules
+# then:
+sudo augenrules --load
+
+# When ModuleJail's syslog blocks a load, correlate by timestamp:
+sudo ausearch -k modprobe_exec --start recent -i
+sudo ausearch -k modload       --start recent -i
+```
+
+Each `EXECVE` record carries an adjacent `SYSCALL` record with:
+
+- `auid=N` - the real login user (the value that `loginuid` would have
+  read, but visible *before* the kthreadd reparenting wipes it)
+- `pid=N ppid=N` - the actual triggering process, not the modprobe wrapper
+- `comm="..."` and `exe="..."` - what binary made the syscall
+
+**What breaks:** nothing functional, but auditd adds disk and syslog
+churn. On a quiet host expect a handful of records per day; on a host
+whose users are exploring, the volume itself is the signal.
+
+**Trade-off:** observability, not prevention. Use this when you need to
+attribute a blocked autoload attempt to a specific originating process,
+especially during the tuning window when you are shaping the
+`WHITELIST` for a new host before pushing the blacklist to a fleet.
+Pair `--verbose-logging` (ModuleJail-side timestamps) with `ausearch`
+(kernel-side originator) to get the full chain on demand.
+
 ---
 
 ## How the recipes stack
@@ -437,6 +503,12 @@ ModuleJail is Step 1 because it has the lowest deployment cost, defends
 the largest class of CVEs (every "unprivileged-user autoloads vulnerable
 module → LPE" chain), and does not require a reboot. The other recipes
 each add one more layer that an attacker has to bypass.
+
+Recipe 6 (audit-based autoload tracing) is observability rather than
+prevention, so it does not sit in the hardening stack above. Pull it in
+when you need to attribute a blocked load attempt to its originating
+process - typically during the initial tuning window for a new host,
+or while investigating a verbose-logging entry that looks suspicious.
 
 ---
 
