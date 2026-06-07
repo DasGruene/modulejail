@@ -224,6 +224,94 @@ below for the kill-switch.
 
 ---
 
+## Where ModuleJail's policy applies (and where it does not)
+
+ModuleJail's blacklist is a steady-state policy for the real root
+filesystem, enforced by the userspace `modprobe` running after
+`pivot_root`. It is **deliberately not enforced during the initramfs
+phase of boot**, and the `--install-initramfs-hook` flag (since v1.4)
+strips the modulejail blacklist from the initramfs cpio at build time
+on dracut, initramfs-tools, and mkinitcpio.
+
+This is a design choice, not a gap, and it falls out of the threat
+model in Tier 1-7 above.
+
+### Initrd has no unprivileged attacker
+
+The entire threat surface listed above - socket-family autoload, AF_ALG
+crypto autoload, setuid-helper-driven filesystem autoload, binfmt
+autoload, character-device autoload, netlink autoload, the
+user-namespace amplifier - **requires a userspace process running as
+an unprivileged user to make the triggering syscall**. There is no
+such process during the initramfs window:
+
+- The only running tasks are kernel threads (descendants of `kthreadd`,
+  PID 2) and PID 1 / init scripts, executing what the distro shipped
+  for that early-boot phase.
+- No login session exists; no `loginuid` has been set on any task.
+- No shell prompt is open; no setuid helper is reachable to a user.
+- The autoload triggers that fire during this window are the kernel
+  itself deciding it needs storage, crypto, filesystem, or RNG modules
+  to mount the real root - driven by in-kernel code paths from PID 0
+  context, not by attacker-controlled syscalls.
+
+Removing the modulejail blacklist from the initramfs cpio therefore
+loses zero defense against the threat ModuleJail is built for. The
+"early-boot attack surface" framing does not bind here because there is
+no unprivileged attacker on the initrd side of `pivot_root`.
+
+### What stripping the initramfs blacklist closes
+
+Mainstream initramfs builders (dracut, initramfs-tools, mkinitcpio) all
+copy `/etc/modprobe.d/*.conf` into the initramfs cpio at build time.
+When a kernel package upgrade triggers an initramfs rebuild, the then-
+current modulejail blacklist gets frozen into the new kernel's
+initramfs. Subsequent on-disk edits or full revocation do not update
+the baked copy.
+
+This becomes a **boot-bricking risk** when the new kernel renames a
+hardware driver that ModuleJail's `lsmod` snapshot on the old kernel
+did not see. The classic case is RAID drivers: `mpt2sas` -> `mpi3mr`
+on some LSI SAS controllers across kernel-LTS bumps; similar drift
+has hit some Adaptec storage, some network drivers (newer chipsets
+arriving under new module names), and some `nvme-fabrics` modules.
+The chain is:
+
+1. Operator upgrades to a new kernel package.
+2. That package install triggers an initramfs rebuild for the new
+   kernel; the rebuild copies the on-disk modulejail blacklist into
+   the new cpio. The blacklist was computed against the OLD kernel's
+   `lsmod`, so any module that ONLY exists under a new name on the
+   new kernel is in that blacklist (it was not in the old `lsmod`).
+3. Operator reboots into the new kernel. Initramfs starts; modprobe
+   tries to autoload the new RAID driver; install line says "block";
+   driver does not load; root storage does not come up; host fails
+   to boot.
+
+The strip hook removes the file from the cpio at build time, so the
+new kernel's initramfs is clean and can load whatever driver the
+new kernel needs to mount its root. The real-root blacklist remains
+in effect after `pivot_root`, where it is the right policy and where
+the threat model actually applies.
+
+### Trade-off summary
+
+| Concern | "Blacklist in initramfs" (pre-v1.4 default) | "Strip blacklist from initramfs" (v1.4 hook) |
+|---|---|---|
+| Defense against unprivileged-user -> root LPE during initrd | none gained (no unprivileged user exists) | none lost (same: no unprivileged user exists) |
+| Risk of boot failure on kernel-upgrade module rename | high on hardware with naming drift | eliminated |
+| Operator burden after `--whitelist-file` edits or revocation | must regenerate initramfs by hand | automatic from the next kernel install onwards |
+| Symmetry with other modprobe.d files | matches (all distro `.conf`s get baked in) | divergent (modulejail's file is selectively stripped) |
+
+The trade-off is asymmetric in favor of stripping: the boot-failure
+risk is real and has bitten operators in the field (gh issue #19),
+while the alleged early-boot defense gain is zero. The v1.4 default
+for packaged installs (`.deb` / `.rpm` / AUR) is to install the strip
+hook automatically. The unpackaged `curl | sh` and `git clone` paths
+opt in with `modulejail --install-initramfs-hook`.
+
+---
+
 ## Part 2 - Defense-in-depth recipes
 
 The recipes below are stand-alone hardening steps that ModuleJail does

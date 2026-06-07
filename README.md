@@ -5,8 +5,10 @@
 A single POSIX shell script that shrinks a Linux host's kernel-module attack
 surface by writing a `modprobe.d` blacklist for every kernel module not
 currently in use, minus a built-in baseline and an optional sysadmin
-whitelist. No daemons, no initramfs changes, no AI inside the tool. One
-script, one run, one blacklist file.
+whitelist. No daemons, no AI inside the tool. One script, one run, one
+blacklist file. An opt-in initramfs strip hook (`--install-initramfs-hook`,
+since v1.4) keeps the blacklist out of kernel cpios so module-rename across
+kernel upgrades cannot leave a stale-blacklist trap.
 
 ## Why?
 
@@ -297,13 +299,23 @@ modules are never blacklisted regardless of the running profile.
 
 ## Explicit limitations
 
-- **No initramfs handling.** Modules baked into initramfs are out of scope.
-  The loaded-module surface is the target; baked-in modules are not the
-  relevant attack vector.
-- **No revert tooling.** The revert path is "remove the generated file"
-  (no reboot needed; the blacklist is consulted by `modprobe` at load
-  time, so removing the file takes effect immediately). Sysadmin
-  discipline replaces tool guardrails.
+- **Initramfs handling is opt-in.** Modules baked into initramfs are not
+  the attack vector ModuleJail defends against (no unprivileged users
+  exist before pivot_root; see [docs/DEFENSE-IN-DEPTH.md](docs/DEFENSE-IN-DEPTH.md)).
+  However, mainstream initramfs builders (dracut, initramfs-tools,
+  mkinitcpio) copy `/etc/modprobe.d/*.conf` into the cpio at build time,
+  so a kernel upgrade that renames a storage driver could leave the
+  new module blacklisted in the freshly-built initramfs and brick the
+  next boot. The `--install-initramfs-hook` flag (since v1.4) installs
+  a small per-distro hook that strips the modulejail blacklist from
+  the cpio at build time. Packaged installs (.deb / .rpm / AUR) call
+  the flag automatically in their post-install scripts.
+- **Revert.** The revert path for the blacklist is "remove the
+  generated file" (no reboot needed; the blacklist is consulted by
+  `modprobe` at load time, so removing the file takes effect
+  immediately). The matching `--uninstall-initramfs-hook` flag
+  (since v1.4) removes the initramfs strip hook and rebuilds the
+  initramfs images. Sysadmin discipline replaces tool guardrails.
 - **No daemon or continuous monitoring.** One-shot script by design.
 - **No AI inside the tool.** AI is the threat-model backdrop, not a feature.
 - **No per-distro packaging in v1.** The curl one-liner and a cloned repo
@@ -334,9 +346,11 @@ Profile descriptions (from `--help`):
 
 `conservative` is the right choice for virtualised or bare-metal server
 Linux. `desktop` is for laptops and workstations where WiFi, Bluetooth,
-audio, and video drivers must be preserved. `minimal` is for environments
-where you have full control over which drivers are loaded and want the
-smallest possible baseline.
+audio, video drivers, and SD card readers (`mmc_core` / `mmc_block`,
+added v1.4 after [#16](https://github.com/jnuyens/modulejail/issues/16))
+must be preserved. `minimal` is for environments where you have full
+control over which drivers are loaded and want the smallest possible
+baseline.
 
 ### Categories deliberately NOT in any baseline
 
@@ -583,7 +597,7 @@ enforcement, `kernel.modules_disabled=1`).
 |--------|-------------|
 | `-p`, `--profile {minimal\|conservative\|desktop\|none}` | Built-in baseline profile (default: `conservative`). `none` carries no built-in baseline at all - only currently-loaded modules and any `--whitelist-file` entries are preserved. Recommended only when an explicit `--whitelist-file` is supplied (since v1.3) |
 | `-o`, `--output PATH` | Output path for the generated blacklist file (default: `/etc/modprobe.d/modulejail-blacklist.conf`) |
-| `--whitelist-file PATH` | Append module names from PATH to the keep-set. One module per line; `#` starts a comment. File must not be group- or world-writable. Default: `/etc/modulejail/whitelist.conf` |
+| `--whitelist-file PATH` | Append module names from PATH to the keep-set. One module per line; `#` starts a comment. File must be owned by root (or by the invoking user) and must not be group- or world-writable; the error message proposes the exact `sudo chown` / `sudo chmod` command to fix. Default: `/etc/modulejail/whitelist.conf` (since v1.4 the default path is the recommended home for site-local additions instead of editing the in-script `WHITELIST=` line) |
 | `--no-whitelist-file` | Skip the default whitelist file even if present. Mutually exclusive with `--whitelist-file PATH` |
 | `--no-syslog-logging` | Force `/bin/true` install lines (v1.1.4 behavior). By default, blocked module loads are logged to syslog with tag `modulejail` |
 | `-f`, `--fail-on-module-load` | Blocked module loads return a non-zero exit code (`modprobe` fails loudly). Default: blocked loads silently succeed |
@@ -592,6 +606,10 @@ enforcement, `kernel.modules_disabled=1`).
 | `--quiet` | Suppress all non-error stderr output (info lines, summary, header echo). Errors still surface. Mutually exclusive with `--verbose` (since v1.3) |
 | `--verbose` | Emit per-module decision lines on stderr (which module was kept, which was blacklisted, and why). Mutually exclusive with `--quiet` (since v1.3) |
 | `--output-format {json\|logfmt}` | Emit a machine-readable run summary to stdout instead of the default human-readable summary. JSON round-trips through `jq`; logfmt round-trips through standard logfmt parsers. 11-field schema v1 (`kernel_version`, `modules_available`, `modules_loaded`, `modules_blacklisted`, `fingerprint`, `output_path`, ...). Survives `--quiet` (since v1.3) |
+| `--install-initramfs-hook` | Detect the active initramfs builder (dracut, initramfs-tools, mkinitcpio) and install a small hook that strips `modulejail-blacklist.conf` from rebuilt initramfs cpios. Closes the upgrade-then-stale-blacklist trap (gh #19). Requires root. Prints the operator-runnable rebuild command after writing; does not rebuild the initramfs (operator schedules that on their own time). Pair with `--dry-run` to print what would be written without touching any file (since v1.4) |
+| `--uninstall-initramfs-hook` | Remove all four possible hook file paths regardless of which builder is currently detected (handles distro migrations). Prints the rebuild command afterwards. Requires root (since v1.4) |
+| `-y`, `--yes` | Skip the interactive confirmation prompt that `--self-update` would otherwise present. Required for non-interactive invocations (postinst, cron, systemd-run) since `--self-update` refuses to apply silently from a non-tty (since v1.4) |
+| `--self-update` | Fetch the latest stable release from GitHub, preview it (incl. SHA-256 of the downloaded bytes), and prompt interactively before replacing the running script in place. Pass `-y` / `--yes` to skip the prompt (required for non-interactive invocations: postinst, cron, systemd-run). Operator edits to the `SYSADMIN WHITELIST` region of the script are preserved via marker-bracketed splice. External whitelist files (`--whitelist-file PATH` or the default `/etc/modulejail/whitelist.conf`) are NOT touched. Pair with `--dry-run` to preview without prompting. Detects packaged installs (dpkg/rpm/pacman) and prints a warning; prefer `apt upgrade` / `dnf upgrade` / `pacman -Syu` on packaged hosts. Requires `curl` or `wget` (since v1.4) |
 | `-V`, `--version` | Show program version and exit |
 | `-h`, `--help` | Show help text and exit |
 
@@ -602,6 +620,7 @@ Environment variables:
 | `MODULEJAIL_NO_UPDATE_CHECK` | Set to any non-empty value to skip the post-run update check |
 | `MODULEJAIL_LOGGER_PATH` | Path to the logger binary for syslog install-line detection (default: `/usr/bin/logger`) |
 | `MODULEJAIL_DEFAULT_WHITELIST_FILE` | Override the auto-detected whitelist path (default: `/etc/modulejail/whitelist.conf`) |
+| `MODULEJAIL_INITRAMFS_BUILDER` | Force the initramfs builder detection used by `--install-initramfs-hook` / `--uninstall-initramfs-hook` to one of `dracut`, `initramfs-tools`, `mkinitcpio`. Test-only plumbing (since v1.4) |
 
 ## Exit codes
 
@@ -709,6 +728,17 @@ sudo rm /etc/modprobe.d/modulejail-blacklist.conf
 # path that overrides the blacklist):
 sudo modprobe <module_name>
 ```
+
+If you installed the initramfs strip hook (`--install-initramfs-hook`,
+since v1.4), the matching uninstall removes the hook file(s) and
+rebuilds every initramfs image so the removal applies immediately:
+
+```sh
+sudo modulejail --uninstall-initramfs-hook --yes
+```
+
+Packaged installs (.deb / .rpm / AUR) call this from their `prerm` /
+`%preun` scriptlets automatically.
 
 The generated file uses `install <module> ...` directives (with either a
 `/bin/sh + logger` body or `/bin/true`, see *Viewing blocked module
