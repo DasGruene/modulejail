@@ -564,8 +564,9 @@ a do-not-edit-by-hand disclaimer.
 .B "# modulejail VERSION"
 Tool name and version that produced the file.
 .TP
-.B "# https://github.com/jnuyens/modulejail"
-Repository URL for reproducibility and auditing.
+.B "# https://modulejail.com"
+Project home page (source repository is at
+.URL https://github.com/jnuyens/modulejail "" .)
 .TP
 .B "# profile: PROFILE"
 The profile name passed to

@@ -1448,7 +1448,7 @@ emit_install_line() {
 # call time from the enclosing shell scope.
 render_blacklist_file() {
     printf '# modulejail %s\n' "$VERSION"
-    printf '# https://github.com/jnuyens/modulejail\n'
+    printf '# https://modulejail.com\n'
     printf '# profile: %s\n' "$profile"
     printf '# kernel: %s\n' "$_kver"
     printf '# fingerprint: sha256:%s\n' "$fingerprint"

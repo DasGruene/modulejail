@@ -30,7 +30,7 @@ assert_grep '^modulejail: DRY-RUN: would blacklist [0-9]+ of [0-9]+ modules \(pr
 
 # stderr must contain all 8 header lines.
 assert_grep '^# modulejail' "$CASE_TMP/stderr" dry-run-header-line-1
-assert_grep '^# https://github.com/jnuyens/modulejail$' "$CASE_TMP/stderr" dry-run-header-line-2
+assert_grep '^# https://modulejail.com$' "$CASE_TMP/stderr" dry-run-header-line-2
 assert_grep '^# profile:' "$CASE_TMP/stderr" dry-run-header-line-3
 assert_grep '^# kernel:' "$CASE_TMP/stderr" dry-run-header-line-4
 assert_grep '^# fingerprint: sha256:[0-9a-f]{64}$' "$CASE_TMP/stderr" dry-run-header-line-5
