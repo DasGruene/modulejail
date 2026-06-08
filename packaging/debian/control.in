@@ -6,7 +6,7 @@ Architecture: all
 Maintainer: Jasper Nuyens <jnuyens@linuxbe.com>
 Depends: coreutils, findutils, awk | mawk | gawk | original-awk
 Recommends: curl | wget
-Homepage: https://github.com/jnuyens/modulejail
+Homepage: https://modulejail.com
 Description: Shrink Linux kernel-module attack surface
  ModuleJail snapshots the set of currently loaded modules and writes a
  modprobe.d blacklist for every kernel module not currently in use,

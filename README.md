@@ -10,6 +10,10 @@ blacklist file. An opt-in initramfs strip hook (`--install-initramfs-hook`,
 since v1.4) keeps the blacklist out of kernel cpios so module-rename across
 kernel upgrades cannot leave a stale-blacklist trap.
 
+Project page: <https://modulejail.com>. Source repository, issue tracker,
+signed release tarballs, and prebuilt `.deb` / `.rpm` artifacts:
+<https://github.com/jnuyens/modulejail>.
+
 ## Why?
 
 AI-assisted security scanning is about to do to the Linux kernel what

@@ -888,4 +888,7 @@ This is free software: you are free to change and redistribute it. There
 is NO WARRANTY, to the extent permitted by law.
 
 .SH HOMEPAGE
-https://github.com/jnuyens/modulejail
+https://modulejail.com
+.PP
+Source repository, issue tracker, signed release tarballs and binary
+artifacts: https://github.com/jnuyens/modulejail

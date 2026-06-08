@@ -873,6 +873,7 @@ while [ $# -gt 0 ]; do
             ;;
         -V|--version)
             printf 'modulejail %s\n' "$VERSION"
+            printf 'https://modulejail.com\n'
             printf 'https://github.com/jnuyens/modulejail\n'
             printf 'License: GPL-3.0-only (https://spdx.org/licenses/GPL-3.0-only.html)\n'
             exit $EX_OK

@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Shrink Linux kernel-module attack surface
 
 License:        GPL-3.0-only
-URL:            https://github.com/jnuyens/modulejail
+URL:            https://modulejail.com
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
