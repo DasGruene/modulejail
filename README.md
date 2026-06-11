@@ -477,6 +477,46 @@ Operators who have been editing the in-script `WHITELIST` (the v1.0
 path) keep that edit untouched; the file is a no-side-effect overlay on
 top.
 
+### Module dependency resolution
+
+A whitelisted module may itself depend on other modules that
+ModuleJail would otherwise blacklist - and if those dependencies are
+not also in the keep-set, the whitelisted module will fail to load
+with missing-symbol errors at autoload time. The classic case is
+`mmc_block` depending on `rpmb_core` on kernel 7.0+ (the RPMB code
+was split out of `mmc_core` between 6.12 and 7.0); whitelisting only
+`mmc_block` is not enough on those kernels.
+
+Stock `kmod` already ships the right diagnostic: `modprobe
+--show-depends MODULE` prints the full transitive insertion chain
+that the kernel would walk to load `MODULE`, in load order, reading
+the same `/lib/modules/$(uname -r)/modules.dep` ModuleJail uses for
+its blacklist generation.
+
+```
+$ modprobe --show-depends mmc_block
+insmod /lib/modules/.../rpmb-core.ko
+insmod /lib/modules/.../mmc_core.ko
+insmod /lib/modules/.../mmc_block.ko
+```
+
+To extract the names in underscore form and append them to the
+whitelist file in one go:
+
+```sh
+modprobe --show-depends mmc_block \
+    | awk '/^insmod/ {print $2}' \
+    | sed -E 's|.*/||;s|\.ko\..*$||;s|-|_|g' \
+    | sudo tee -a /etc/modulejail/whitelist.conf
+```
+
+Run that for each module you want, then re-run `modulejail`. ModuleJail
+itself does not currently walk the dependency tree of whitelisted
+modules - the operator is responsible for resolving and listing the
+full closure. (Discussion at
+[gh #16](https://github.com/jnuyens/modulejail/issues/16) on whether
+to add transitive-dependency resolution to the keep-set computation.)
+
 ModuleJail enforces two safety gates on the file:
 
 1. **File mode must not be group- or world-writable.** The same
@@ -594,6 +634,69 @@ section above for the full framing, and
 [docs/DEFENSE-IN-DEPTH.md](docs/DEFENSE-IN-DEPTH.md) for recipes that
 close the root-with-intent gap (kernel lockdown mode, module signature
 enforcement, `kernel.modules_disabled=1`).
+
+## FAQ
+
+### Does ModuleJail protect against in-use-module CVEs like CVE-2026-23111 (nf_tables LPE)?
+
+Short answer: **only on hosts that don't already load the vulnerable
+module**. ModuleJail's model is "unused -> blacklist," not "vulnerable
+-> blacklist." If `nf_tables` is in `lsmod` at scan time (any host
+running nftables, firewalld, iptables-nft, ufw on modern Debian/Ubuntu,
+or systemd's own nft hooks), ModuleJail preserves it - the bug surface
+stays reachable and patching the kernel is the only fix.
+
+The protected population is hosts where the vulnerable module is *not*
+loaded at scan time:
+
+| Host shape | `nf_tables` loaded at scan | Protected? |
+|---|---|---|
+| Server running nftables / firewalld / iptables-nft | yes | no - kernel patch required |
+| Server with legacy iptables only, or no firewall configured | no | yes |
+| Minimal cloud VM / container host / CI runner with no nft | no | yes |
+
+On a host where `nf_tables` is unloaded, an unprivileged user can
+otherwise trigger the autoload via:
+
+```sh
+unshare -Urn                                  # userns gives CAP_NET_ADMIN in the new netns
+# then in the namespace:
+# socket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER) -> autoloads nfnetlink
+# sendmsg(... NFNL_SUBSYS_NFTABLES ...)          -> autoloads nf_tables
+```
+
+That is the same primitive every public nft-CVE PoC uses. With
+ModuleJail active, the `install nf_tables /bin/sh -c '... exit 0'`
+line in `/etc/modprobe.d/modulejail-blacklist.conf` causes
+`/sbin/modprobe` (invoked by the kernel via `request_module()`) to
+no-op the load. The `socket()` ultimately fails with `-EAFNOSUPPORT`
+and the vulnerable code is never reached - even from inside a user
+namespace, since the autoload happens in init's namespace where the
+install line lives.
+
+Two caveats:
+
+1. **Built-in kernel:** if `CONFIG_NF_TABLES=y` (compiled in, not
+   modular), `install` lines do nothing. Stock Debian/Ubuntu/Fedora/Arch
+   ship `=m`, so this is rare in practice -
+   `grep CONFIG_NF_TABLES /boot/config-$(uname -r)` confirms.
+2. **In-use modules:** if the host actively uses nftables, neither
+   ModuleJail nor any other blacklist can help against this CVE.
+   Patch the kernel and disable unprivileged user namespaces
+   (`sysctl -w kernel.unprivileged_userns_clone=0` on Debian/Ubuntu, or
+   `sysctl -w user.max_user_namespaces=0` on Fedora/Arch). The
+   userns-disable step alone neutralises the entire class of
+   "unprivileged user gets CAP_NET_ADMIN" LPE chains, of which this
+   CVE is one.
+
+The general framing applies to any future "popular module + userns
+LPE" CVE: ModuleJail shrinks the *autoload* surface, which covers
+hosts where the module wasn't going to be used anyway. For hosts that
+*do* use the vulnerable module, kernel patching plus
+`unprivileged_userns_clone=0` is the structural defence; ModuleJail
+is the complement, not the substitute. See
+[docs/DEFENSE-IN-DEPTH.md](docs/DEFENSE-IN-DEPTH.md) for the layered
+picture.
 
 ## Options reference
 
